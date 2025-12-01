@@ -1,0 +1,534 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+
+:root {
+  --color-bg: #1a1a1a;
+  /* Dark Charcoal */
+  --color-card: #252525;
+  --color-text: #f0f0f0;
+  /* Off-white */
+  --color-primary: #ff3333;
+  /* Vibrant Red */
+  --color-primary-glow: rgba(255, 51, 51, 0.5);
+  --color-secondary: #333333;
+  --font-main: 'Inter', sans-serif;
+  --font-header: 'Playfair Display', serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-main);
+  -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(circle at 50% 0%, #330000 0%, var(--color-bg) 60%);
+  min-height: 100vh;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-container,
+.lobby-container {
+  width: 100%;
+  max-width: 400px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+/* Spotlight Effect */
+.app-container::before,
+.lobby-container::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 600px;
+  background: linear-gradient(180deg, rgba(255, 51, 51, 0.1) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: -1;
+  filter: blur(20px);
+}
+
+.title {
+  font-family: var(--font-header);
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 40px;
+  color: var(--color-text);
+  text-shadow: 0 0 10px var(--color-primary-glow);
+}
+
+.input-field {
+  width: 100%;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+  font-size: 1.2rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-bottom: 15px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 15px var(--color-primary-glow);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn {
+  width: 100%;
+  padding: 15px;
+  font-size: 1.1rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  margin-bottom: 15px;
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  letter-spacing: 1px;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn.primary {
+  background-color: var(--color-text);
+  color: var(--color-bg);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.btn.primary:hover {
+  background-color: white;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+.btn.secondary {
+  background-color: transparent;
+  border: 2px solid var(--color-text);
+  color: var(--color-text);
+}
+
+.btn.secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.btn.text {
+  background: none;
+  color: var(--color-text);
+  text-decoration: none;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.btn.text:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.error-banner {
+  background: rgba(255, 51, 51, 0.2);
+  border: 1px solid var(--color-primary);
+  color: #ffcccc;
+  padding: 10px;
+  font-weight: bold;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.3);
+  font-weight: bold;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: var(--font-main);
+  letter-spacing: 1px;
+  font-size: 0.9rem;
+}
+
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 30px 0;
+}
+
+.player-card {
+  padding: 15px;
+  background: var(--color-card);
+  font-weight: bold;
+  text-align: left;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: transform 0.2s;
+}
+
+.player-card:hover {
+  transform: translateX(5px);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.player-card.host {
+  border-left: 4px solid var(--color-primary);
+  background: linear-gradient(90deg, rgba(255, 51, 51, 0.1) 0%, var(--color-card) 100%);
+}
+
+.setting-group {
+  text-align: left;
+  margin-bottom: 25px;
+}
+
+.setting-group label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Role Reveal */
+.role-reveal-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  animation: fadeIn 1s ease-out;
+}
+
+.role-title {
+  font-family: var(--font-header);
+  font-size: 3rem;
+  margin-bottom: 30px;
+  text-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.role-card {
+  background: var(--color-card);
+  padding: 40px;
+  border-radius: 12px;
+  margin-bottom: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  position: relative;
+  overflow: hidden;
+}
+
+.role-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--color-primary);
+  box-shadow: 0 0 10px var(--color-primary);
+}
+
+.sub-text {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--color-primary);
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px var(--color-primary-glow);
+}
+
+.instruction {
+  font-size: 1.1rem;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+.role-master .role-title {
+  color: var(--color-primary);
+  text-shadow: 0 0 20px var(--color-primary-glow);
+}
+
+.role-insider .role-title {
+  color: var(--color-primary);
+  text-shadow: 0 0 20px var(--color-primary-glow);
+}
+
+.role-common .role-title {
+  color: white;
+}
+
+/* Quiz Phase */
+.timer-container {
+  position: relative;
+  margin: 30px 0;
+}
+
+.timer-display {
+  font-family: var(--font-main);
+  font-size: 5rem;
+  font-weight: 900;
+  color: var(--color-text);
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+  position: relative;
+  z-index: 2;
+}
+
+/* Circular progress indicator could go here, but simple text is fine for now */
+
+.master-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.answer-buttons {
+  display: flex;
+  gap: 15px;
+}
+
+.answer-btn {
+  flex: 1;
+  padding: 20px;
+  font-size: 1.2rem;
+  border-radius: 8px;
+  font-weight: 900;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+
+.answer-btn.yes {
+  background: transparent;
+  border: 2px solid #4caf50;
+  color: #4caf50;
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.2);
+}
+
+.answer-btn.yes:hover {
+  background: rgba(76, 175, 80, 0.1);
+  box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+}
+
+.answer-btn.no {
+  background: transparent;
+  border: 2px solid var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: 0 0 10px var(--color-primary-glow);
+}
+
+.answer-btn.no:hover {
+  background: rgba(255, 51, 51, 0.1);
+  box-shadow: 0 0 20px var(--color-primary-glow);
+}
+
+.answer-btn.idk {
+  background: transparent;
+  border: 2px solid #888;
+  color: #888;
+}
+
+.answer-btn.idk:hover {
+  background: rgba(136, 136, 136, 0.1);
+}
+
+.correct-btn {
+  background: var(--color-primary) !important;
+  color: white !important;
+  box-shadow: 0 0 15px var(--color-primary-glow) !important;
+  border: none !important;
+}
+
+.player-log {
+  width: 100%;
+  text-align: left;
+  margin-top: 30px;
+  flex: 1;
+  overflow-y: auto;
+  max-height: 300px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.player-log h3 {
+  font-family: var(--font-header);
+  margin-top: 0;
+  color: rgba(255, 255, 255, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+}
+
+.log-entry {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.log-entry.yes {
+  color: #4caf50;
+}
+
+.log-entry.no {
+  color: var(--color-primary);
+}
+
+.log-entry.idk {
+  color: #888;
+}
+
+/* Voting Phase */
+.voting-screen h1 {
+  font-family: var(--font-header);
+  font-size: 2.5rem;
+  color: var(--color-text);
+}
+
+.candidates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.candidate-card {
+  padding: 20px;
+  background: var(--color-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.candidate-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.candidate-card.selected {
+  border-color: var(--color-primary);
+  background: rgba(255, 51, 51, 0.1);
+  box-shadow: 0 0 15px var(--color-primary-glow);
+}
+
+.voted-badge {
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+  letter-spacing: 1px;
+}
+
+/* Results Phase */
+.results-screen {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.result-title {
+  font-family: var(--font-header);
+  font-size: 3.5rem;
+  color: var(--color-primary);
+  text-shadow: 0 0 20px var(--color-primary-glow);
+  margin-bottom: 0;
+}
+
+.result-reason {
+  font-size: 1.2rem;
+  margin-bottom: 30px;
+  opacity: 0.8;
+  font-style: italic;
+}
+
+.roles-reveal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.result-card {
+  padding: 15px 20px;
+  background: var(--color-card);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.result-card.master {
+  border-left: 4px solid #4caf50;
+}
+
+.result-card.insider {
+  border-left: 4px solid var(--color-primary);
+}
+
+.result-card.common {
+  border-left: 4px solid #888;
+}
+
+.result-card.accused {
+  border: 2px solid var(--color-text);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+.player-role {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  margin-left: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.vote-count {
+  font-weight: 900;
+  color: var(--color-primary);
+}
+
+.play-again-controls {
+  margin-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 30px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
