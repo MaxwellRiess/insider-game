@@ -1,24 +1,23 @@
 import React, { useState } from 'react';
 import { socket } from '../socket';
 
-export default function Lobby({ onJoin }) {
-    const [name, setName] = useState('');
-    const [roomCode, setRoomCode] = useState('');
+export default function Lobby({ onJoin, savedSession, resumeError, onClearSavedSession }) {
+    const [name, setName] = useState(savedSession?.playerName || '');
+    const [roomCode, setRoomCode] = useState(savedSession?.roomCode || '');
     const [error, setError] = useState('');
-    const [mode, setMode] = useState('menu'); // menu, join, create
-
-    const [difficulty, setDifficulty] = useState('Easy');
+    const [mode, setMode] = useState('menu'); // menu, join
 
     const handleCreate = () => {
         if (!name) {
             setError('Please enter your name');
             return;
         }
-        socket.emit('createRoom', { playerName: name, settings: { wordPack: difficulty } }, (response) => {
+
+        socket.emit('createRoom', { playerName: name }, (response) => {
             if (response.error) {
                 setError(response.error);
             } else {
-                onJoin(response.room);
+                onJoin(response);
             }
         });
     };
@@ -28,20 +27,23 @@ export default function Lobby({ onJoin }) {
             setError('Please enter name and room code');
             return;
         }
+
         socket.emit('joinRoom', { roomCode, playerName: name }, (response) => {
             if (response.error) {
                 setError(response.error);
             } else {
-                onJoin(response.room);
+                onJoin(response);
             }
         });
     };
+
+    const activeError = error || resumeError;
 
     return (
         <div className="lobby-container">
             <h1 className="title">DIGITAL INSIDER</h1>
 
-            {error && <div className="error-banner">{error}</div>}
+            {activeError && <div className="error-banner">{activeError}</div>}
 
             {mode === 'menu' && (
                 <div className="menu-buttons">
@@ -52,30 +54,22 @@ export default function Lobby({ onJoin }) {
                         onChange={(e) => setName(e.target.value)}
                         className="input-field"
                     />
-                    <button className="btn primary" onClick={() => setMode('create')}>CREATE ROOM</button>
+                    <button className="btn primary" onClick={handleCreate}>CREATE ROOM</button>
                     <button className="btn secondary" onClick={() => setMode('join')}>JOIN ROOM</button>
-                </div>
-            )}
-
-            {mode === 'create' && (
-                <div className="create-view">
-                    <p>Creating room as <strong>{name}</strong>...</p>
-
-                    <div className="setting-group">
-                        <label>DIFFICULTY:</label>
-                        <select
-                            value={difficulty}
-                            onChange={(e) => setDifficulty(e.target.value)}
-                            className="input-field"
+                    {savedSession && (
+                        <button
+                            className="btn text"
+                            onClick={() => {
+                                setRoomCode(savedSession.roomCode || '');
+                                setMode('join');
+                            }}
                         >
-                            <option value="Easy">EASY</option>
-                            <option value="Medium">MEDIUM</option>
-                            <option value="Hard">HARD</option>
-                        </select>
-                    </div>
-
-                    <button className="btn primary" onClick={handleCreate}>CONFIRM CREATE</button>
-                    <button className="btn text" onClick={() => setMode('menu')}>BACK</button>
+                            REJOIN LAST ROOM
+                        </button>
+                    )}
+                    {savedSession && (
+                        <button className="btn text" onClick={onClearSavedSession}>CLEAR SAVED SESSION</button>
+                    )}
                 </div>
             )}
 

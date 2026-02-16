@@ -1,20 +1,18 @@
 import React, { useState } from 'react';
 import { socket } from '../socket';
 
-export default function VotingScreen({ room }) {
+export default function VotingScreen({ room, myPlayerId }) {
     const [selectedSuspect, setSelectedSuspect] = useState(null);
-    const [hasVoted, setHasVoted] = useState(false);
-    const myId = socket.id;
+    const committedVote = myPlayerId ? room.votes?.[myPlayerId] : null;
+    const hasVoted = Boolean(committedVote);
+    const activeSelection = hasVoted ? committedVote : selectedSuspect;
 
     const handleVote = () => {
-        if (selectedSuspect) {
+        if (selectedSuspect && !hasVoted) {
             socket.emit('submitVote', { roomCode: room.code, suspectId: selectedSuspect });
-            setHasVoted(true);
         }
     };
 
-    // Filter out Master from voting list? Spec says "A list of all players (except the Master) appears".
-    // So we filter out the Master.
     const masterId = Object.keys(room.roles).find(id => room.roles[id] === 'MASTER');
     const candidates = room.players.filter(p => p.id !== masterId);
 
@@ -27,11 +25,10 @@ export default function VotingScreen({ room }) {
                 {candidates.map(p => (
                     <div
                         key={p.id}
-                        className={`candidate-card ${selectedSuspect === p.id ? 'selected' : ''}`}
+                        className={`candidate-card ${activeSelection === p.id ? 'selected' : ''}`}
                         onClick={() => !hasVoted && setSelectedSuspect(p.id)}
                     >
                         <span className="candidate-name">{p.name}</span>
-                        {/* Show if this player has voted (optional, based on room.votes keys) */}
                         {room.votes && room.votes[p.id] && <span className="voted-badge">VOTED</span>}
                     </div>
                 ))}

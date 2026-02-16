@@ -1,48 +1,86 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { socket } from '../socket';
 
-export default function RoleReveal({ room }) {
-    const myId = socket.id;
-    const myRole = room.roles[myId];
+export default function RoleReveal({ room, myPlayerId }) {
+    const myRole = myPlayerId ? room.roles[myPlayerId] : null;
     const secretWord = room.secretWord;
+    const [error, setError] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    let roleTitle = '';
+    let roleWord = '';
+    let roleLabelClass = '';
     let subText = '';
     let instruction = '';
+    let waitingText = 'WAITING FOR MASTER TO BEGIN ROUND...';
     let roleClass = '';
+    let showsSecretWord = false;
 
     switch (myRole) {
         case 'MASTER':
-            roleTitle = 'YOU ARE THE MASTER';
-            subText = `THE SECRET WORD IS: ${secretWord}`;
+            roleWord = 'MASTER';
+            roleLabelClass = 'master';
+            showsSecretWord = true;
             instruction = 'WAIT FOR QUESTIONS';
+            waitingText = 'PRESS BEGIN ROUND WHEN EVERYONE IS READY';
             roleClass = 'role-master';
             break;
         case 'INSIDER':
-            roleTitle = 'YOU ARE THE INSIDER';
-            subText = `THE SECRET WORD IS: ${secretWord}`;
+            roleWord = 'INSIDER';
+            roleLabelClass = 'insider';
+            showsSecretWord = true;
             instruction = 'GUIDE THE COMMONS TO THE ANSWER WITHOUT BEING CAUGHT';
             roleClass = 'role-insider';
             break;
         case 'COMMON':
-            roleTitle = 'YOU ARE A COMMONER';
+            roleWord = 'COMMONER';
+            roleLabelClass = 'common';
             subText = 'YOU DO NOT KNOW THE WORD';
             instruction = 'ASK YES/NO QUESTIONS TO FIND THE WORD';
             roleClass = 'role-common';
             break;
         default:
-            roleTitle = 'SPECTATOR';
+            roleWord = 'SPECTATOR';
+            roleLabelClass = 'spectator';
             break;
     }
 
+    const handleBeginRound = () => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
+        socket.emit('beginRound', room.code, (response) => {
+            setIsSubmitting(false);
+            if (response?.error) {
+                setError(response.error);
+            } else {
+                setError('');
+            }
+        });
+    };
+
     return (
         <div className={`role-reveal-container ${roleClass}`}>
-            <h1 className="role-title">{roleTitle}</h1>
+            <h1 className="role-title">
+                YOU ARE THE <span className={`role-name ${roleLabelClass}`}>{roleWord}</span>
+            </h1>
             <div className="role-card">
-                <p className="sub-text">{subText}</p>
+                {showsSecretWord ? (
+                    <div className="secret-word-block">
+                        <p className="secret-word-label">SECRET WORD:</p>
+                        <p className="secret-word-value">{secretWord}</p>
+                    </div>
+                ) : (
+                    <p className="sub-text">{subText}</p>
+                )}
                 <p className="instruction">{instruction}</p>
             </div>
-            <p className="timer-hint">GAME STARTING IN 10 SECONDS...</p>
+            {myRole === 'MASTER' ? (
+                <button className="btn primary" onClick={handleBeginRound} disabled={isSubmitting}>
+                    BEGIN ROUND
+                </button>
+            ) : (
+                <p className="timer-hint">{waitingText}</p>
+            )}
+            {error && <div className="error-banner">{error}</div>}
         </div>
     );
 }

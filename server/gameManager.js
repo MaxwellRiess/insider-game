@@ -1,12 +1,16 @@
+const { randomUUID } = require('crypto');
 const { generateRoomCode } = require('./utils');
+
+const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
 
 class GameManager {
     constructor(io) {
         this.io = io;
         this.rooms = new Map(); // roomCode -> Room State
+        this.disconnectGraceMs = DISCONNECT_GRACE_MS;
     }
 
-    createRoom(hostId, settings = {}) {
+    createRoom(settings = {}) {
         let roomCode;
         do {
             roomCode = generateRoomCode();
@@ -14,22 +18,50 @@ class GameManager {
 
         const newRoom = {
             code: roomCode,
-            hostId: hostId,
-            players: [], // { id, name, avatar, role, isHost }
+            hostId: null,
+            players: [], // { id, socketId, sessionToken, name, avatar, isHost, connected, lastSeenAt }
             state: 'LOBBY', // LOBBY, ROLE_REVEAL, QUIZ, VOTING, RESULT
             settings: {
                 timerDuration: 300, // 5 mins
                 wordPack: settings.wordPack || 'Easy'
             },
             secretWord: null,
-            roles: {} // playerId -> role
+            roles: {}, // playerId -> role
+            votes: {}
         };
 
         this.rooms.set(roomCode, newRoom);
         return newRoom;
     }
 
-    joinRoom(socketId, roomCode, playerName) {
+    ensureHost(room) {
+        if (room.players.length === 0) {
+            room.hostId = null;
+            return;
+        }
+
+        let host = room.players.find(p => p.id === room.hostId);
+        if (!host) {
+            host = room.players[0];
+            room.hostId = host.id;
+        }
+
+        room.players.forEach((player) => {
+            player.isHost = player.id === room.hostId;
+        });
+    }
+
+    findPlayerBySocketId(socketId) {
+        for (const room of this.rooms.values()) {
+            const player = room.players.find(p => p.socketId === socketId);
+            if (player) {
+                return { room, player };
+            }
+        }
+        return null;
+    }
+
+    joinRoom(socketId, roomCode, playerName, existingSessionToken = null) {
         const room = this.rooms.get(roomCode);
         if (!room) {
             return { error: 'Room not found' };
@@ -41,64 +73,95 @@ class GameManager {
             return { error: 'Name already taken' };
         }
 
-        const isHost = room.players.length === 0; // First player is host? Or host created it separately?
-        // In this flow, Host creates room then joins? Or Host is implicitly first player?
-        // Let's assume Host creates and automatically joins.
-
-        // Actually, if createRoom is called, we should probably add the host there or immediately after.
-        // Let's handle it in the socket handler: create -> join.
-
         const newPlayer = {
-            id: socketId,
+            id: randomUUID(),
+            socketId,
+            sessionToken: existingSessionToken || randomUUID(),
             name: playerName,
-            avatar: 'default', // TODO: Add avatar selection
-            isHost: false // Will be set if they match hostId
+            avatar: 'default',
+            isHost: room.players.length === 0,
+            connected: true,
+            lastSeenAt: Date.now(),
+            disconnectTimeout: null
         };
 
-        if (socketId === room.hostId) {
-            newPlayer.isHost = true;
+        if (newPlayer.isHost) {
+            room.hostId = newPlayer.id;
         }
 
         room.players.push(newPlayer);
-        return { room };
+        this.ensureHost(room);
+
+        return { room, player: newPlayer };
+    }
+
+    resumeSession(roomCode, sessionToken, socketId) {
+        const room = this.rooms.get(roomCode);
+        if (!room) {
+            return { error: 'Room not found' };
+        }
+
+        const player = room.players.find(p => p.sessionToken === sessionToken);
+        if (!player) {
+            return { error: 'Session not found for this room' };
+        }
+
+        if (player.disconnectTimeout) {
+            clearTimeout(player.disconnectTimeout);
+            player.disconnectTimeout = null;
+        }
+
+        if (player.socketId && player.socketId !== socketId) {
+            const previousSocket = this.io.sockets.sockets.get(player.socketId);
+            if (previousSocket) {
+                previousSocket.leave(roomCode);
+            }
+        }
+
+        player.socketId = socketId;
+        player.connected = true;
+        player.lastSeenAt = Date.now();
+        this.ensureHost(room);
+
+        return { room, player };
     }
 
     getRoom(roomCode) {
         return this.rooms.get(roomCode);
     }
 
-    startGame(roomCode) {
+    startGame(roomCode, settings = {}) {
         const room = this.rooms.get(roomCode);
         if (!room) return { error: 'Room not found' };
-        if (room.players.length < 4) return { error: 'Need at least 4 players' }; // TODO: Lower to 3 for dev?
+        if (room.players.length < 4) return { error: 'Need at least 4 players' };
+
+        if (settings.wordPack) {
+            room.settings.wordPack = settings.wordPack;
+        }
+
+        room.roles = {};
+        room.votes = {};
 
         // Assign Roles
         const players = [...room.players];
-        // Shuffle players
         for (let i = players.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [players[i], players[j]] = [players[j], players[i]];
         }
 
-        // Assign Master (Index 0)
         const masterId = players[0].id;
         room.roles[masterId] = 'MASTER';
 
-        // Assign Insider (Index 1)
         const insiderId = players[1].id;
         room.roles[insiderId] = 'INSIDER';
 
-        // Assign Commons (Rest)
         for (let i = 2; i < players.length; i++) {
             room.roles[players[i].id] = 'COMMON';
         }
 
-        // Select Word based on Difficulty
         const words = require('./words');
         const difficulty = room.settings.wordPack;
         const filteredWords = words.filter(w => w.difficulty === difficulty);
-
-        // Fallback if no words found (shouldn't happen)
         const pool = filteredWords.length > 0 ? filteredWords : words;
 
         const randomWord = pool[Math.floor(Math.random() * pool.length)];
@@ -106,11 +169,25 @@ class GameManager {
 
         room.state = 'ROLE_REVEAL';
 
-        // Start 10s timer for reveal
-        setTimeout(() => {
-            this.startQuiz(roomCode);
-        }, 10000);
+        return { room };
+    }
 
+    beginRound(roomCode, socketId) {
+        const room = this.rooms.get(roomCode);
+        if (!room) return { error: 'Room not found' };
+        if (room.state !== 'ROLE_REVEAL') return { error: 'Round cannot be started right now' };
+
+        const located = this.findPlayerBySocketId(socketId);
+        if (!located || located.room.code !== roomCode) {
+            return { error: 'Player is not in this room' };
+        }
+
+        const role = room.roles[located.player.id];
+        if (role !== 'MASTER') {
+            return { error: 'Only the Master can begin the round' };
+        }
+
+        this.startQuiz(roomCode);
         return { room };
     }
 
@@ -120,19 +197,15 @@ class GameManager {
 
         room.state = 'QUIZ';
         room.quizStartTime = Date.now();
-        room.questionLog = []; // { id, answer, timestamp }
+        room.questionLog = [];
         this.emitRoomUpdate(roomCode);
 
-        // Timer is handled on client mostly, but server should validate end time?
-        // For now, trust clients or Master to trigger end, or set a timeout.
-        // Let's set a timeout to force end if Master doesn't trigger it.
         const durationMs = room.settings.timerDuration * 1000;
 
-        // Clear any existing timeout
         if (room.timerTimeout) clearTimeout(room.timerTimeout);
 
         room.timerTimeout = setTimeout(() => {
-            this.endQuiz(roomCode, false); // Time ran out
+            this.endQuiz(roomCode, false);
         }, durationMs);
     }
 
@@ -142,7 +215,7 @@ class GameManager {
 
         const logEntry = {
             id: room.questionLog.length + 1,
-            answer: answer, // 'YES', 'NO', 'IDK'
+            answer,
             timestamp: Date.now()
         };
 
@@ -154,7 +227,7 @@ class GameManager {
         const room = this.rooms.get(roomCode);
         if (!room || room.state !== 'QUIZ') return;
 
-        this.endQuiz(roomCode, true); // Found the word
+        this.endQuiz(roomCode, true);
     }
 
     endQuiz(roomCode, success) {
@@ -168,9 +241,6 @@ class GameManager {
 
         if (success) {
             room.state = 'VOTING';
-            // Start voting timer? Or just let them discuss?
-            // Spec says: "The timer flips (starts counting down the remaining time)."
-            // We need to calculate remaining time.
             const elapsed = room.quizEndTime - room.quizStartTime;
             const durationMs = room.settings.timerDuration * 1000;
             const remaining = Math.max(0, durationMs - elapsed);
@@ -178,38 +248,33 @@ class GameManager {
             room.votingDuration = remaining;
             room.votingStartTime = Date.now();
 
-            // Auto-end voting after duration
             room.votingTimeout = setTimeout(() => {
                 this.endVoting(roomCode);
             }, remaining);
 
         } else {
-            room.state = 'GAME_OVER'; // Everyone loses
+            room.state = 'GAME_OVER';
         }
 
         this.emitRoomUpdate(roomCode);
     }
 
-    submitVote(roomCode, voterId, suspectId) {
-        const room = this.rooms.get(roomCode);
-        if (!room || room.state !== 'VOTING') return;
+    submitVote(roomCode, voterSocketId, suspectId) {
+        const located = this.findPlayerBySocketId(voterSocketId);
+        if (!located) return;
 
-        // Initialize votes map if needed
+        const { room, player } = located;
+        if (room.code !== roomCode || room.state !== 'VOTING') return;
+        if (!room.players.some(p => p.id === suspectId)) return;
+
         if (!room.votes) room.votes = {};
 
-        room.votes[voterId] = suspectId;
-
-        // Check if everyone (except Master?) has voted.
-        // Spec: "A list of all players (except the Master) appears on everyone's screen."
-        // Usually Master also votes in Insider?
-        // "Players select who they suspect is the Insider."
-        // Let's assume everyone votes, including Master.
+        room.votes[player.id] = suspectId;
 
         const votersCount = room.players.length;
         if (Object.keys(room.votes).length >= votersCount) {
             this.endVoting(roomCode);
         } else {
-            // Optional: Emit update to show who has voted (but not who they voted for)
             this.emitRoomUpdate(roomCode);
         }
     }
@@ -220,13 +285,11 @@ class GameManager {
 
         if (room.votingTimeout) clearTimeout(room.votingTimeout);
 
-        // Tally votes
         const voteCounts = {};
         for (const suspectId of Object.values(room.votes || {})) {
             voteCounts[suspectId] = (voteCounts[suspectId] || 0) + 1;
         }
 
-        // Find player with most votes
         let maxVotes = 0;
         let accusedId = null;
         let isTie = false;
@@ -241,14 +304,7 @@ class GameManager {
             }
         }
 
-        // Determine Winner
-        // Scenario A: Correct Accusation (Accused is Insider) -> Commons + Master Win
-        // Scenario B: Wrong Accusation (Accused is Commoner/Master) -> Insider Wins
-        // Tie -> Insider Wins (Option B in spec)
-
-        let winner = ''; // 'COMMONS' or 'INSIDER'
-
-        // Find Insider ID
+        let winner = '';
         const insiderId = Object.keys(room.roles).find(id => room.roles[id] === 'INSIDER');
 
         if (isTie) {
@@ -274,12 +330,10 @@ class GameManager {
         const room = this.rooms.get(roomCode);
         if (!room) return;
 
-        // Update settings if provided
         if (settings.wordPack) {
             room.settings.wordPack = settings.wordPack;
         }
 
-        // Reset state to LOBBY
         room.state = 'LOBBY';
         room.secretWord = null;
         room.roles = {};
@@ -292,47 +346,143 @@ class GameManager {
         room.voteResults = null;
         room.accusedId = null;
 
-        // Clear timeouts
         if (room.timerTimeout) clearTimeout(room.timerTimeout);
         if (room.votingTimeout) clearTimeout(room.votingTimeout);
 
         this.emitRoomUpdate(roomCode);
     }
 
+    isHostSocketForRoom(socketId, roomCode) {
+        const located = this.findPlayerBySocketId(socketId);
+        if (!located) return false;
+
+        const { room, player } = located;
+        return room.code === roomCode && room.hostId === player.id;
+    }
+
+    getSanitizedRoom(room) {
+        return {
+            ...room,
+            players: room.players.map(player => ({
+                id: player.id,
+                name: player.name,
+                avatar: player.avatar,
+                isHost: player.isHost,
+                connected: player.connected,
+                lastSeenAt: player.lastSeenAt
+            })),
+            timerTimeout: undefined,
+            votingTimeout: undefined
+        };
+    }
+
     emitRoomUpdate(roomCode) {
         const room = this.rooms.get(roomCode);
         if (!room) return;
 
-        // Create a sanitized copy of the room object
-        const sanitizedRoom = {
-            ...room,
-            timerTimeout: undefined,
-            votingTimeout: undefined
-        };
-
+        const sanitizedRoom = this.getSanitizedRoom(room);
         this.io.to(roomCode).emit('roomUpdate', sanitizedRoom);
     }
 
-    removePlayer(socketId) {
-        // Find room player is in
-        for (const [code, room] of this.rooms.entries()) {
-            const index = room.players.findIndex(p => p.id === socketId);
-            if (index !== -1) {
-                const player = room.players[index];
-                room.players.splice(index, 1);
+    evictPlayer(roomCode, playerId) {
+        const room = this.rooms.get(roomCode);
+        if (!room) return;
 
-                // If host left, assign new host or close room?
-                if (player.isHost && room.players.length > 0) {
-                    room.players[0].isHost = true;
-                    room.hostId = room.players[0].id;
-                } else if (room.players.length === 0) {
-                    this.rooms.delete(code);
+        const index = room.players.findIndex(p => p.id === playerId);
+        if (index === -1) return;
+
+        const [player] = room.players.splice(index, 1);
+        if (player.disconnectTimeout) {
+            clearTimeout(player.disconnectTimeout);
+        }
+
+        delete room.roles[playerId];
+        if (room.votes) {
+            delete room.votes[playerId];
+            for (const [voterId, suspectId] of Object.entries(room.votes)) {
+                if (suspectId === playerId) {
+                    delete room.votes[voterId];
                 }
-
-                return { roomCode: code, room };
             }
         }
-        return null;
+
+        if (room.hostId === playerId) {
+            room.hostId = null;
+        }
+
+        if (room.players.length === 0) {
+            if (room.timerTimeout) clearTimeout(room.timerTimeout);
+            if (room.votingTimeout) clearTimeout(room.votingTimeout);
+            this.rooms.delete(roomCode);
+            return;
+        }
+
+        this.ensureHost(room);
+
+        if (room.state === 'VOTING') {
+            const votersCount = room.players.length;
+            if (Object.keys(room.votes || {}).length >= votersCount) {
+                this.endVoting(roomCode);
+                return;
+            }
+        }
+
+        this.emitRoomUpdate(roomCode);
+    }
+
+    removePlayer(socketId) {
+        const located = this.findPlayerBySocketId(socketId);
+        if (!located) {
+            return null;
+        }
+
+        const { room, player } = located;
+        player.connected = false;
+        player.lastSeenAt = Date.now();
+        player.socketId = null;
+
+        if (player.disconnectTimeout) {
+            clearTimeout(player.disconnectTimeout);
+        }
+
+        player.disconnectTimeout = setTimeout(() => {
+            this.evictPlayer(room.code, player.id);
+        }, this.disconnectGraceMs);
+
+        return { roomCode: room.code, room };
+    }
+
+    closeRoom(socketId, roomCode) {
+        if (!roomCode || typeof roomCode !== 'string') {
+            return { error: 'Room code is required' };
+        }
+
+        const normalizedRoomCode = roomCode.toUpperCase();
+        const room = this.rooms.get(normalizedRoomCode);
+        if (!room) {
+            return { error: 'Room not found' };
+        }
+
+        const located = this.findPlayerBySocketId(socketId);
+        if (!located || located.room.code !== normalizedRoomCode) {
+            return { error: 'Only players in the room can close it' };
+        }
+
+        if (room.hostId !== located.player.id) {
+            return { error: 'Only the host can close the room' };
+        }
+
+        if (room.timerTimeout) clearTimeout(room.timerTimeout);
+        if (room.votingTimeout) clearTimeout(room.votingTimeout);
+
+        for (const player of room.players) {
+            if (player.disconnectTimeout) {
+                clearTimeout(player.disconnectTimeout);
+            }
+        }
+
+        this.rooms.delete(normalizedRoomCode);
+        return { roomCode: normalizedRoomCode };
     }
 }
 
