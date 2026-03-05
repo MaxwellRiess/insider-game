@@ -41,7 +41,7 @@ export default function Lobby({ onJoin, savedSession, resumeError, onClearSavedS
 
     return (
         <div className="lobby-container">
-            <h1 className="title">DIGITAL INSIDER</h1>
+            <h1 className="title"><span className="title-label">Digital</span>Insider</h1>
 
             {activeError && <div className="error-banner">{activeError}</div>}
 
