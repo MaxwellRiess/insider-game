@@ -2,12 +2,39 @@ const { randomUUID } = require('crypto');
 const { generateRoomCode } = require('./utils');
 
 const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
+const STALE_ROOM_CHECK_MS = 60 * 1000; // check every minute
+const STALE_ROOM_THRESHOLD_MS = 10 * 60 * 1000; // remove after 10 minutes of full inactivity
 
 class GameManager {
     constructor(io) {
         this.io = io;
         this.rooms = new Map(); // roomCode -> Room State
         this.disconnectGraceMs = DISCONNECT_GRACE_MS;
+
+        this.staleRoomInterval = setInterval(() => {
+            this.cleanupStaleRooms();
+        }, STALE_ROOM_CHECK_MS);
+    }
+
+    cleanupStaleRooms() {
+        const now = Date.now();
+        for (const [roomCode, room] of this.rooms) {
+            const allDisconnected = room.players.every(p => !p.connected);
+            if (!allDisconnected) continue;
+
+            const mostRecentActivity = Math.max(
+                ...room.players.map(p => p.lastSeenAt || 0)
+            );
+            if (now - mostRecentActivity < STALE_ROOM_THRESHOLD_MS) continue;
+
+            if (room.timerTimeout) clearTimeout(room.timerTimeout);
+            if (room.votingTimeout) clearTimeout(room.votingTimeout);
+            for (const player of room.players) {
+                if (player.disconnectTimeout) clearTimeout(player.disconnectTimeout);
+            }
+
+            this.rooms.delete(roomCode);
+        }
     }
 
     createRoom(settings = {}) {
