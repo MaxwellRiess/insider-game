@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { socket } from '../socket';
+import { getRole } from '../roomHelpers';
+import SecretReveal from './SecretReveal';
 
 export default function RoleReveal({ room, myPlayerId }) {
-    const myRole = myPlayerId ? room.roles[myPlayerId] : null;
+    const myRole = getRole(room, myPlayerId);
     const secretWord = room.secretWord;
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -20,7 +22,7 @@ export default function RoleReveal({ room, myPlayerId }) {
             roleWord = 'MASTER';
             roleLabelClass = 'master';
             showsSecretWord = true;
-            instruction = 'WAIT FOR QUESTIONS';
+            instruction = 'ANSWER QUESTIONS WITH YES, NO OR DON\'T KNOW';
             waitingText = 'PRESS BEGIN ROUND WHEN EVERYONE IS READY';
             roleClass = 'role-master';
             break;
@@ -59,22 +61,28 @@ export default function RoleReveal({ room, myPlayerId }) {
 
     return (
         <div className={`role-reveal-container ${roleClass}`}>
-            <h1 className="role-title">
-                YOU ARE THE <span className={`role-name ${roleLabelClass}`}>{roleWord}</span>
-            </h1>
-            <div className="role-card">
-                {showsSecretWord ? (
-                    <div className="secret-word-block">
-                        <p className="secret-word-label">SECRET WORD:</p>
-                        <p className="secret-word-value">{secretWord}</p>
-                    </div>
-                ) : (
-                    <p className="sub-text">{subText}</p>
-                )}
-                <p className="instruction">{instruction}</p>
-            </div>
+            <SecretReveal
+                className="role-reveal-cover"
+                coverLabel="TAP TO SEE YOUR ROLE"
+                coverHint="KEEP YOUR SCREEN HIDDEN FROM OTHERS"
+            >
+                <span className="role-title">
+                    YOU ARE THE <span className={`role-name ${roleLabelClass}`}>{roleWord}</span>
+                </span>
+                <span className="role-card">
+                    {showsSecretWord ? (
+                        <span className="secret-word-block">
+                            <span className="secret-word-label">SECRET WORD:</span>
+                            <span className="secret-word-value">{secretWord}</span>
+                        </span>
+                    ) : (
+                        <span className="sub-text">{subText}</span>
+                    )}
+                    <span className="instruction">{instruction}</span>
+                </span>
+            </SecretReveal>
             {myRole === 'MASTER' ? (
-                <button className="btn primary" onClick={handleBeginRound} disabled={isSubmitting}>
+                <button type="button" className="btn primary" onClick={handleBeginRound} disabled={isSubmitting}>
                     BEGIN ROUND
                 </button>
             ) : (

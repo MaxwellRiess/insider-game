@@ -1,14 +1,26 @@
 const { randomUUID } = require('crypto');
 const { generateRoomCode } = require('./utils');
+const words = require('./words');
 
 const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
 const STALE_ROOM_CHECK_MS = 60 * 1000; // check every minute
 const STALE_ROOM_THRESHOLD_MS = 10 * 60 * 1000; // remove after 10 minutes of full inactivity
+const MIN_VOTING_MS = 60 * 1000;
+const MAX_NAME_LENGTH = 20;
+
+const WORD_PACKS = ['Easy', 'Medium', 'Hard'];
+const ANSWERS = ['YES', 'NO', 'IDK'];
+// States in which every role, the word and all votes are public.
+const REVEALED_STATES = new Set(['RESULT', 'GAME_OVER']);
+// States in which a round is under way and needs its Master and Insider.
+const ROUND_STATES = new Set(['ROLE_REVEAL', 'QUIZ', 'VOTING']);
+const KEY_ROLE_NAMES = { MASTER: 'Master', INSIDER: 'Insider' };
 
 class GameManager {
     constructor(io) {
         this.io = io;
         this.rooms = new Map(); // roomCode -> Room State
+        this.socketIndex = new Map(); // socketId -> { roomCode, playerId }
         this.disconnectGraceMs = DISCONNECT_GRACE_MS;
 
         this.staleRoomInterval = setInterval(() => {
@@ -27,14 +39,28 @@ class GameManager {
             );
             if (now - mostRecentActivity < STALE_ROOM_THRESHOLD_MS) continue;
 
-            if (room.timerTimeout) clearTimeout(room.timerTimeout);
-            if (room.votingTimeout) clearTimeout(room.votingTimeout);
-            for (const player of room.players) {
-                if (player.disconnectTimeout) clearTimeout(player.disconnectTimeout);
-            }
-
-            this.rooms.delete(roomCode);
+            this.destroyRoom(roomCode);
         }
+    }
+
+    destroyRoom(roomCode) {
+        const room = this.rooms.get(roomCode);
+        if (!room) return;
+
+        this.clearRoomTimers(room);
+        for (const player of room.players) {
+            if (player.disconnectTimeout) clearTimeout(player.disconnectTimeout);
+            if (player.socketId) this.socketIndex.delete(player.socketId);
+        }
+
+        this.rooms.delete(roomCode);
+    }
+
+    clearRoomTimers(room) {
+        if (room.timerTimeout) clearTimeout(room.timerTimeout);
+        if (room.votingTimeout) clearTimeout(room.votingTimeout);
+        room.timerTimeout = null;
+        room.votingTimeout = null;
     }
 
     createRoom(settings = {}) {
@@ -47,30 +73,33 @@ class GameManager {
             code: roomCode,
             hostId: null,
             players: [], // { id, socketId, sessionToken, name, avatar, isHost, connected, lastSeenAt }
-            state: 'LOBBY', // LOBBY, ROLE_REVEAL, QUIZ, VOTING, RESULT
+            state: 'LOBBY', // LOBBY, ROLE_REVEAL, QUIZ, VOTING, RESULT, GAME_OVER
             settings: {
                 timerDuration: 300, // 5 mins
-                wordPack: settings.wordPack || 'Easy'
+                wordPack: WORD_PACKS.includes(settings.wordPack) ? settings.wordPack : 'Easy'
             },
             secretWord: null,
             roles: {}, // playerId -> role
-            votes: {}
+            votes: {},
+            notice: null // shown in the lobby, e.g. why the last round ended early
         };
 
         this.rooms.set(roomCode, newRoom);
         return newRoom;
     }
 
+    // Keeps a connected host whenever possible. Falls back to any player
+    // only when nobody is connected.
     ensureHost(room) {
         if (room.players.length === 0) {
             room.hostId = null;
             return;
         }
 
-        let host = room.players.find(p => p.id === room.hostId);
-        if (!host) {
-            host = room.players[0];
-            room.hostId = host.id;
+        const host = room.players.find(p => p.id === room.hostId);
+        if (!host || !host.connected) {
+            const replacement = room.players.find(p => p.connected) || host || room.players[0];
+            room.hostId = replacement.id;
         }
 
         room.players.forEach((player) => {
@@ -79,16 +108,28 @@ class GameManager {
     }
 
     findPlayerBySocketId(socketId) {
-        for (const room of this.rooms.values()) {
-            const player = room.players.find(p => p.socketId === socketId);
-            if (player) {
-                return { room, player };
-            }
+        const entry = this.socketIndex.get(socketId);
+        if (!entry) return null;
+
+        const room = this.rooms.get(entry.roomCode);
+        const player = room?.players.find(p => p.id === entry.playerId);
+        if (!player || player.socketId !== socketId) {
+            this.socketIndex.delete(socketId);
+            return null;
         }
-        return null;
+
+        return { room, player };
     }
 
-    joinRoom(socketId, roomCode, playerName, existingSessionToken = null) {
+    // Validates a display name. Returns the trimmed name or null.
+    normaliseName(playerName) {
+        if (typeof playerName !== 'string') return null;
+        const name = playerName.trim().replace(/\s+/g, ' ');
+        if (name.length < 1 || name.length > MAX_NAME_LENGTH) return null;
+        return name;
+    }
+
+    joinRoom(socketId, roomCode, playerName) {
         const room = this.rooms.get(roomCode);
         if (!room) {
             return { error: 'Room not found' };
@@ -96,27 +137,30 @@ class GameManager {
         if (room.state !== 'LOBBY') {
             return { error: 'Game already in progress' };
         }
-        if (room.players.some(p => p.name === playerName)) {
+
+        const name = this.normaliseName(playerName);
+        if (!name) {
+            return { error: `Name must be 1 to ${MAX_NAME_LENGTH} characters` };
+        }
+        const lowerName = name.toLowerCase();
+        if (room.players.some(p => p.name.toLowerCase() === lowerName)) {
             return { error: 'Name already taken' };
         }
 
         const newPlayer = {
             id: randomUUID(),
             socketId,
-            sessionToken: existingSessionToken || randomUUID(),
-            name: playerName,
+            sessionToken: randomUUID(),
+            name,
             avatar: 'default',
-            isHost: room.players.length === 0,
+            isHost: false,
             connected: true,
             lastSeenAt: Date.now(),
             disconnectTimeout: null
         };
 
-        if (newPlayer.isHost) {
-            room.hostId = newPlayer.id;
-        }
-
         room.players.push(newPlayer);
+        this.socketIndex.set(socketId, { roomCode: room.code, playerId: newPlayer.id });
         this.ensureHost(room);
 
         return { room, player: newPlayer };
@@ -139,6 +183,7 @@ class GameManager {
         }
 
         if (player.socketId && player.socketId !== socketId) {
+            this.socketIndex.delete(player.socketId);
             const previousSocket = this.io.sockets.sockets.get(player.socketId);
             if (previousSocket) {
                 previousSocket.leave(roomCode);
@@ -148,6 +193,7 @@ class GameManager {
         player.socketId = socketId;
         player.connected = true;
         player.lastSeenAt = Date.now();
+        this.socketIndex.set(socketId, { roomCode: room.code, playerId: player.id });
         this.ensureHost(room);
 
         return { room, player };
@@ -160,14 +206,21 @@ class GameManager {
     startGame(roomCode, settings = {}) {
         const room = this.rooms.get(roomCode);
         if (!room) return { error: 'Room not found' };
+        if (room.state !== 'LOBBY') return { error: 'Game already in progress' };
         if (room.players.length < 4) return { error: 'Need at least 4 players' };
 
-        if (settings.wordPack) {
+        if (WORD_PACKS.includes(settings.wordPack)) {
             room.settings.wordPack = settings.wordPack;
         }
 
+        this.clearRoomTimers(room);
         room.roles = {};
         room.votes = {};
+        room.winner = null;
+        room.winReason = null;
+        room.voteResults = null;
+        room.accusedId = null;
+        room.notice = null;
 
         // Assign Roles
         const players = [...room.players];
@@ -186,7 +239,6 @@ class GameManager {
             room.roles[players[i].id] = 'COMMON';
         }
 
-        const words = require('./words');
         const difficulty = room.settings.wordPack;
         const filteredWords = words.filter(w => w.difficulty === difficulty);
         const pool = filteredWords.length > 0 ? filteredWords : words;
@@ -199,18 +251,18 @@ class GameManager {
         return { room };
     }
 
+    isMasterSocketForRoom(socketId, roomCode) {
+        const located = this.findPlayerBySocketId(socketId);
+        if (!located || located.room.code !== roomCode) return false;
+        return located.room.roles[located.player.id] === 'MASTER';
+    }
+
     beginRound(roomCode, socketId) {
         const room = this.rooms.get(roomCode);
         if (!room) return { error: 'Room not found' };
         if (room.state !== 'ROLE_REVEAL') return { error: 'Round cannot be started right now' };
 
-        const located = this.findPlayerBySocketId(socketId);
-        if (!located || located.room.code !== roomCode) {
-            return { error: 'Player is not in this room' };
-        }
-
-        const role = room.roles[located.player.id];
-        if (role !== 'MASTER') {
+        if (!this.isMasterSocketForRoom(socketId, roomCode)) {
             return { error: 'Only the Master can begin the round' };
         }
 
@@ -236,9 +288,14 @@ class GameManager {
         }, durationMs);
     }
 
-    submitAnswer(roomCode, answer) {
+    submitAnswer(roomCode, socketId, answer) {
         const room = this.rooms.get(roomCode);
-        if (!room || room.state !== 'QUIZ') return;
+        if (!room) return { error: 'Room not found' };
+        if (room.state !== 'QUIZ') return { error: 'The quiz is not running' };
+        if (!this.isMasterSocketForRoom(socketId, roomCode)) {
+            return { error: 'Only the Master can answer' };
+        }
+        if (!ANSWERS.includes(answer)) return { error: 'Invalid answer' };
 
         const logEntry = {
             id: room.questionLog.length + 1,
@@ -248,13 +305,19 @@ class GameManager {
 
         room.questionLog.push(logEntry);
         this.emitRoomUpdate(roomCode);
+        return { ok: true };
     }
 
-    triggerCorrectAnswer(roomCode) {
+    triggerCorrectAnswer(roomCode, socketId) {
         const room = this.rooms.get(roomCode);
-        if (!room || room.state !== 'QUIZ') return;
+        if (!room) return { error: 'Room not found' };
+        if (room.state !== 'QUIZ') return { error: 'The quiz is not running' };
+        if (!this.isMasterSocketForRoom(socketId, roomCode)) {
+            return { error: 'Only the Master can confirm the word' };
+        }
 
         this.endQuiz(roomCode, true);
+        return { ok: true };
     }
 
     endQuiz(roomCode, success) {
@@ -270,7 +333,7 @@ class GameManager {
             room.state = 'VOTING';
             const elapsed = room.quizEndTime - room.quizStartTime;
             const durationMs = room.settings.timerDuration * 1000;
-            const remaining = Math.max(0, durationMs - elapsed);
+            const remaining = Math.max(MIN_VOTING_MS, durationMs - elapsed);
 
             room.votingDuration = remaining;
             room.votingStartTime = Date.now();
@@ -288,22 +351,32 @@ class GameManager {
 
     submitVote(roomCode, voterSocketId, suspectId) {
         const located = this.findPlayerBySocketId(voterSocketId);
-        if (!located) return;
+        if (!located) return { error: 'Player is not in a room' };
 
         const { room, player } = located;
-        if (room.code !== roomCode || room.state !== 'VOTING') return;
-        if (!room.players.some(p => p.id === suspectId)) return;
+        if (room.code !== roomCode) return { error: 'Player is not in this room' };
+        if (room.state !== 'VOTING') return { error: 'Voting is not open' };
+        if (!room.players.some(p => p.id === suspectId)) return { error: 'Unknown player' };
+        if (room.roles[suspectId] === 'MASTER') return { error: 'The Master cannot be accused' };
 
         if (!room.votes) room.votes = {};
 
         room.votes[player.id] = suspectId;
 
-        const votersCount = room.players.length;
-        if (Object.keys(room.votes).length >= votersCount) {
+        if (this.allConnectedVoted(room)) {
             this.endVoting(roomCode);
         } else {
             this.emitRoomUpdate(roomCode);
         }
+        return { ok: true };
+    }
+
+    // True once every connected player has voted. Offline players do not
+    // hold up the vote, but any vote they cast before dropping still counts.
+    allConnectedVoted(room) {
+        const votes = room.votes || {};
+        const connected = room.players.filter(p => p.connected);
+        return connected.length > 0 && connected.every(p => votes[p.id]);
     }
 
     endVoting(roomCode) {
@@ -334,7 +407,10 @@ class GameManager {
         let winner = '';
         const insiderId = Object.keys(room.roles).find(id => room.roles[id] === 'INSIDER');
 
-        if (isTie) {
+        if (Object.keys(voteCounts).length === 0) {
+            winner = 'INSIDER';
+            room.winReason = 'NO VOTES CAST';
+        } else if (isTie) {
             winner = 'INSIDER';
             room.winReason = 'VOTE TIED';
         } else if (accusedId === insiderId) {
@@ -348,7 +424,7 @@ class GameManager {
         room.state = 'RESULT';
         room.winner = winner;
         room.voteResults = voteCounts;
-        room.accusedId = accusedId;
+        room.accusedId = isTie ? null : accusedId;
 
         this.emitRoomUpdate(roomCode);
     }
@@ -357,11 +433,17 @@ class GameManager {
         const room = this.rooms.get(roomCode);
         if (!room) return;
 
-        if (settings.wordPack) {
+        if (WORD_PACKS.includes(settings.wordPack)) {
             room.settings.wordPack = settings.wordPack;
         }
 
+        this.returnToLobby(room, null);
+    }
+
+    // Clears all round state and sends everyone back to the lobby.
+    returnToLobby(room, notice) {
         room.state = 'LOBBY';
+        room.notice = notice;
         room.secretWord = null;
         room.roles = {};
         room.votes = {};
@@ -369,14 +451,16 @@ class GameManager {
         room.quizStartTime = null;
         room.quizEndTime = null;
         room.quizSuccess = null;
+        room.votingStartTime = null;
+        room.votingDuration = null;
         room.winner = null;
+        room.winReason = null;
         room.voteResults = null;
         room.accusedId = null;
 
-        if (room.timerTimeout) clearTimeout(room.timerTimeout);
-        if (room.votingTimeout) clearTimeout(room.votingTimeout);
+        this.clearRoomTimers(room);
 
-        this.emitRoomUpdate(roomCode);
+        this.emitRoomUpdate(room.code);
     }
 
     isHostSocketForRoom(socketId, roomCode) {
@@ -387,9 +471,20 @@ class GameManager {
         return room.code === roomCode && room.hostId === player.id;
     }
 
-    getSanitizedRoom(room) {
-        return {
-            ...room,
+    // Builds the room view for one player. Secrets are only included where
+    // that player is allowed to see them.
+    getSanitizedRoom(room, viewerId) {
+        const revealed = REVEALED_STATES.has(room.state);
+        const myRole = room.roles[viewerId] || null;
+        const knowsWord = revealed || myRole === 'MASTER' || myRole === 'INSIDER';
+        const masterId = Object.keys(room.roles).find(id => room.roles[id] === 'MASTER') || null;
+        const votes = room.votes || {};
+
+        const view = {
+            code: room.code,
+            hostId: room.hostId,
+            state: room.state,
+            settings: room.settings,
             players: room.players.map(player => ({
                 id: player.id,
                 name: player.name,
@@ -398,17 +493,41 @@ class GameManager {
                 connected: player.connected,
                 lastSeenAt: player.lastSeenAt
             })),
-            timerTimeout: undefined,
-            votingTimeout: undefined
+            myId: viewerId,
+            myRole,
+            masterId,
+            secretWord: knowsWord ? room.secretWord : null,
+            questionLog: room.questionLog || [],
+            quizStartTime: room.quizStartTime || null,
+            quizEndTime: room.quizEndTime || null,
+            quizSuccess: room.quizSuccess ?? null,
+            votingStartTime: room.votingStartTime || null,
+            votingDuration: room.votingDuration || null,
+            votedPlayerIds: Object.keys(votes),
+            myVote: votes[viewerId] || null,
+            notice: room.notice || null
         };
+
+        if (revealed) {
+            view.roles = room.roles;
+            view.votes = votes;
+            view.winner = room.winner || null;
+            view.winReason = room.winReason || null;
+            view.voteResults = room.voteResults || null;
+            view.accusedId = room.accusedId || null;
+        }
+
+        return view;
     }
 
     emitRoomUpdate(roomCode) {
         const room = this.rooms.get(roomCode);
         if (!room) return;
 
-        const sanitizedRoom = this.getSanitizedRoom(room);
-        this.io.to(roomCode).emit('roomUpdate', sanitizedRoom);
+        for (const player of room.players) {
+            if (!player.connected || !player.socketId) continue;
+            this.io.to(player.socketId).emit('roomUpdate', this.getSanitizedRoom(room, player.id));
+        }
     }
 
     evictPlayer(roomCode, playerId) {
@@ -418,9 +537,13 @@ class GameManager {
         const index = room.players.findIndex(p => p.id === playerId);
         if (index === -1) return;
 
+        const role = room.roles[playerId];
         const [player] = room.players.splice(index, 1);
         if (player.disconnectTimeout) {
             clearTimeout(player.disconnectTimeout);
+        }
+        if (player.socketId) {
+            this.socketIndex.delete(player.socketId);
         }
 
         delete room.roles[playerId];
@@ -438,20 +561,23 @@ class GameManager {
         }
 
         if (room.players.length === 0) {
-            if (room.timerTimeout) clearTimeout(room.timerTimeout);
-            if (room.votingTimeout) clearTimeout(room.votingTimeout);
-            this.rooms.delete(roomCode);
+            this.destroyRoom(roomCode);
             return;
         }
 
         this.ensureHost(room);
 
-        if (room.state === 'VOTING') {
-            const votersCount = room.players.length;
-            if (Object.keys(room.votes || {}).length >= votersCount) {
-                this.endVoting(roomCode);
-                return;
-            }
+        // Without its Master or Insider a round cannot finish: nobody can
+        // begin it or confirm the word, and the vote cannot catch anyone.
+        // End it and send everyone back to the lobby with the reason.
+        if (ROUND_STATES.has(room.state) && KEY_ROLE_NAMES[role]) {
+            this.returnToLobby(room, `${player.name} (the ${KEY_ROLE_NAMES[role]}) left, so the round was ended.`);
+            return;
+        }
+
+        if (room.state === 'VOTING' && this.allConnectedVoted(room)) {
+            this.endVoting(roomCode);
+            return;
         }
 
         this.emitRoomUpdate(roomCode);
@@ -459,11 +585,17 @@ class GameManager {
 
     removePlayer(socketId) {
         const located = this.findPlayerBySocketId(socketId);
+        this.socketIndex.delete(socketId);
         if (!located) {
             return null;
         }
 
-        const { room, player } = located;
+        this.disconnectPlayer(located.room, located.player);
+        return { roomCode: located.room.code, room: located.room };
+    }
+
+    // Marks a player offline and starts their reconnect grace period.
+    disconnectPlayer(room, player) {
         player.connected = false;
         player.lastSeenAt = Date.now();
         player.socketId = null;
@@ -476,22 +608,35 @@ class GameManager {
             this.evictPlayer(room.code, player.id);
         }, this.disconnectGraceMs);
 
-        return { roomCode: room.code, room };
+        // Hand host to a connected player straight away.
+        this.ensureHost(room);
+
+        // If this was the last player still to vote, close the vote now
+        // rather than waiting for the timer or the grace period.
+        if (room.state === 'VOTING' && this.allConnectedVoted(room)) {
+            this.endVoting(room.code);
+        }
+    }
+
+    leaveRoom(socketId, roomCode) {
+        const located = this.findPlayerBySocketId(socketId);
+        if (!located || located.room.code !== roomCode) {
+            return { error: 'You are not in this room' };
+        }
+
+        this.evictPlayer(roomCode, located.player.id);
+        this.socketIndex.delete(socketId);
+        return { ok: true };
     }
 
     closeRoom(socketId, roomCode) {
-        if (!roomCode || typeof roomCode !== 'string') {
-            return { error: 'Room code is required' };
-        }
-
-        const normalizedRoomCode = roomCode.toUpperCase();
-        const room = this.rooms.get(normalizedRoomCode);
+        const room = this.rooms.get(roomCode);
         if (!room) {
             return { error: 'Room not found' };
         }
 
         const located = this.findPlayerBySocketId(socketId);
-        if (!located || located.room.code !== normalizedRoomCode) {
+        if (!located || located.room.code !== roomCode) {
             return { error: 'Only players in the room can close it' };
         }
 
@@ -499,17 +644,8 @@ class GameManager {
             return { error: 'Only the host can close the room' };
         }
 
-        if (room.timerTimeout) clearTimeout(room.timerTimeout);
-        if (room.votingTimeout) clearTimeout(room.votingTimeout);
-
-        for (const player of room.players) {
-            if (player.disconnectTimeout) {
-                clearTimeout(player.disconnectTimeout);
-            }
-        }
-
-        this.rooms.delete(normalizedRoomCode);
-        return { roomCode: normalizedRoomCode };
+        this.destroyRoom(roomCode);
+        return { roomCode };
     }
 }
 

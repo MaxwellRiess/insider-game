@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
-
 :root {
   --color-bg: #131313;
   --color-card: #1c1c1c;
@@ -63,8 +61,9 @@ body::after {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   position: relative;
   z-index: 1;
 }
@@ -75,10 +74,33 @@ body::after {
 .lobby-container {
   width: 100%;
   max-width: 420px;
-  padding: 24px 20px;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* The landing page has a fixed height, so it can sit centred. In-room views
+   grow as players join, so they stay pinned to the top to avoid jumping. */
+.lobby-container {
+  margin-block: auto;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
 }
 
 /* ── Loading ─────────────────────────────── */
@@ -941,6 +963,361 @@ select.input-field option {
   margin-top: 12px;
   padding-top: 20px;
   border-top: 1px solid var(--color-border);
+}
+
+/* ── Room code and invite ────────────────── */
+
+.join-invite {
+  margin: 0 0 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.join-invite strong {
+  color: var(--color-text);
+}
+
+.room-code-input {
+  text-align: center;
+  letter-spacing: 8px;
+}
+
+.room-code-input::placeholder {
+  letter-spacing: 2px;
+}
+
+.room-code-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 20px 10px;
+  margin-bottom: 18px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius);
+}
+
+.room-code-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--color-muted);
+}
+
+.room-code-value {
+  font-size: 3.4rem;
+  font-weight: 900;
+  letter-spacing: 12px;
+  text-indent: 12px;
+  line-height: 1.1;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.share-btn {
+  margin: 8px 0 0;
+}
+
+.share-status {
+  min-height: 1.2em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-success);
+}
+
+.player-count-hint {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+}
+
+.player-list {
+  list-style: none;
+  padding: 0;
+}
+
+.player-card {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.player-card.offline {
+  opacity: 0.5;
+}
+
+.player-card-tags {
+  display: flex;
+  gap: 6px;
+}
+
+.player-tag {
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  color: var(--color-primary);
+  border: 1px solid rgba(255, 51, 51, 0.35);
+}
+
+.player-tag.muted {
+  color: var(--color-muted);
+  border-color: var(--color-border-mid);
+}
+
+/* ── Tap to reveal ───────────────────────── */
+
+.secret-reveal {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.secret-reveal-label {
+  font-size: 0.85rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  color: var(--color-text);
+}
+
+.secret-reveal-hint {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+}
+
+.role-reveal-cover.hidden {
+  min-height: 260px;
+  justify-content: center;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 10px, transparent 10px 20px),
+    var(--color-card);
+  border: 1px dashed var(--color-border-mid);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+}
+
+.role-reveal-cover.revealed {
+  margin-bottom: 14px;
+}
+
+.role-reveal-cover .role-title,
+.role-reveal-cover .role-card,
+.role-reveal-cover .secret-word-block,
+.role-reveal-cover .sub-text,
+.role-reveal-cover .instruction,
+.role-reveal-cover .secret-word-label,
+.role-reveal-cover .secret-word-value {
+  display: block;
+}
+
+.role-reveal-cover .secret-word-block {
+  display: flex;
+}
+
+.role-reveal-cover .role-card {
+  margin-bottom: 0;
+}
+
+.role-chip {
+  min-height: 64px;
+  justify-content: center;
+  padding: 12px 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-sm);
+  gap: 4px;
+}
+
+.role-chip.hidden .secret-reveal-label {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+}
+
+.role-chip-word {
+  font-family: var(--font-header);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 1.8rem;
+  line-height: 1.1;
+  color: var(--color-primary);
+  text-transform: uppercase;
+}
+
+.role-chip-note {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+}
+
+/* ── Voting extras ───────────────────────── */
+
+.candidate-card {
+  width: 100%;
+  font-family: var(--font-main);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.candidate-card:disabled {
+  cursor: default;
+  transform: none;
+}
+
+.candidate-card:disabled:not(.selected) {
+  opacity: 0.5;
+}
+
+.voting-countdown {
+  margin: -4px 0 0;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+
+.voting-countdown span {
+  font-size: 0.68rem;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+}
+
+.voting-countdown.low {
+  color: var(--color-primary);
+}
+
+.vote-status {
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.vote-status-heading {
+  margin: 0 0 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--color-muted);
+}
+
+.vote-status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vote-status-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-mid);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--color-muted);
+}
+
+.vote-status-item.voted {
+  color: var(--color-success);
+  border-color: rgba(76, 175, 80, 0.4);
+}
+
+/* ── Results extras ──────────────────────── */
+
+.result-title.timeout {
+  color: var(--color-text);
+  text-shadow: 0 0 32px rgba(255, 255, 255, 0.2);
+}
+
+.result-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.result-summary:empty {
+  display: none;
+}
+
+.result-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.result-summary-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+}
+
+.result-summary-word {
+  font-family: var(--font-header);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 1.6rem;
+  color: var(--color-primary);
+  text-transform: uppercase;
+}
+
+.result-summary-value {
+  font-weight: 900;
+  font-size: 0.88rem;
+  letter-spacing: 1.5px;
+}
+
+.result-card.unknown {
+  border-left-color: var(--color-border-mid);
+}
+
+.player-role.unknown {
+  color: var(--color-muted);
+}
+
+.vote-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accused-tag {
+  font-size: 0.58rem;
+  letter-spacing: 2px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ── Animations ──────────────────────────── */

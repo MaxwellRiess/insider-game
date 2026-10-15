@@ -1,31 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import useCountdown, { formatSeconds } from '../useCountdown';
 
 const RADIUS = 80;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export default function GameTimer({ startTime, duration }) {
-    const [timeLeft, setTimeLeft] = useState(duration);
+    const timeLeft = useCountdown(startTime, duration);
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const elapsed = (Date.now() - startTime) / 1000;
-            const remaining = Math.max(0, duration - elapsed);
-            setTimeLeft(remaining);
-        }, 100);
-
-        return () => clearInterval(interval);
-    }, [startTime, duration]);
-
-    const minutes = Math.floor(timeLeft / 60);
-    const seconds = Math.floor(timeLeft % 60);
-    const formattedTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-    const progress = timeLeft / duration;
+    const progress = duration ? timeLeft / duration : 0;
     const strokeDashoffset = CIRCUMFERENCE * (1 - progress);
     const isLow = timeLeft < 60;
 
     return (
-        <div className="timer-container">
+        <div className="timer-container" role="timer" aria-label={`${formatSeconds(timeLeft)} remaining`}>
             <svg className="timer-ring" viewBox="0 0 200 200" aria-hidden="true">
                 <circle
                     className="timer-ring-bg"
@@ -44,7 +31,7 @@ export default function GameTimer({ startTime, duration }) {
                     }}
                 />
             </svg>
-            <div className={`timer-display${isLow ? ' low' : ''}`}>{formattedTime}</div>
+            <div className={`timer-display${isLow ? ' low' : ''}`} aria-hidden="true">{formatSeconds(timeLeft)}</div>
         </div>
     );
 }

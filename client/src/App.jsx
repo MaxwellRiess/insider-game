@@ -7,6 +7,9 @@ import MasterControls from './components/MasterControls';
 import PlayerLog from './components/PlayerLog';
 import VotingScreen from './components/VotingScreen';
 import ResultsScreen from './components/ResultsScreen';
+import WaitingRoom from './components/WaitingRoom';
+import RoleChip from './components/RoleChip';
+import { getRole } from './roomHelpers';
 import { clearSession, getSavedSession, saveSession } from './session';
 import './index.css';
 
@@ -88,7 +91,6 @@ function App() {
       }
 
       setRoom(updatedRoom);
-      setHostMenuOpen(false);
     }
 
     function onRoomClosed() {
@@ -176,6 +178,33 @@ function App() {
     );
   };
 
+  const handleLeaveRoom = () => {
+    if (!room) return;
+    if (!window.confirm('Leave this room?')) return;
+
+    const leaveLocally = () => {
+      setRoom(null);
+      setRoomActionError('');
+      clearSavedSession('');
+    };
+
+    socket.timeout(3000).emit('leaveRoom', room.code, (err, response) => {
+      if (!err && response?.error) {
+        setRoomActionError(response.error);
+        return;
+      }
+
+      if (err) {
+        // Server didn't acknowledge. Drop the socket so the server marks us
+        // offline and evicts us after the grace period.
+        socket.disconnect();
+        socket.connect();
+      }
+
+      leaveLocally();
+    });
+  };
+
   const handleResetRoom = () => {
     if (!room) return;
     if (!window.confirm('Reset this room to the lobby?')) return;
@@ -221,10 +250,11 @@ function App() {
     );
   }
 
-  const myPlayerId = savedSession?.playerId;
+  const myPlayerId = room.myId || savedSession?.playerId;
   const myPlayer = room.players.find(player => player.id === myPlayerId);
   const isHost = Boolean(myPlayer?.isHost);
-  const isMaster = Boolean(myPlayerId && room.roles && room.roles[myPlayerId] === 'MASTER');
+  const myRole = getRole(room, myPlayerId);
+  const isMaster = myRole === 'MASTER';
 
   return (
     <div className="app-container">
@@ -238,6 +268,7 @@ function App() {
                 className="host-menu-trigger"
                 onClick={() => setHostMenuOpen((open) => !open)}
                 aria-label="Room options"
+                aria-expanded={hostMenuOpen}
               >
                 •••
               </button>
@@ -256,34 +287,15 @@ function App() {
       {roomActionError && <div className="error-banner">{roomActionError}</div>}
 
       {room.state === 'LOBBY' && (
-        <div className="waiting-room">
-          <h2>WAITING FOR PLAYERS</h2>
-          <div className="player-list">
-            {room.players.map(p => (
-              <div key={p.id} className={`player-card ${p.isHost ? 'host' : ''}`}>
-                {p.name} {p.isHost && '(HOST)'} {!p.connected && '(OFFLINE)'}
-              </div>
-            ))}
-          </div>
-
-          {isHost && (
-            <div className="start-controls">
-              <div className="setting-group">
-                <label>ROUND DIFFICULTY:</label>
-                <select
-                  value={selectedDifficulty}
-                  onChange={(e) => setSelectedDifficulty(e.target.value)}
-                  className="input-field"
-                >
-                  <option value="Easy">EASY</option>
-                  <option value="Medium">MEDIUM</option>
-                  <option value="Hard">HARD</option>
-                </select>
-              </div>
-              <button className="btn primary start-btn" onClick={handleStartGame}>START GAME</button>
-            </div>
-          )}
-        </div>
+        <WaitingRoom
+          room={room}
+          myPlayerId={myPlayerId}
+          isHost={isHost}
+          selectedDifficulty={selectedDifficulty}
+          onDifficultyChange={setSelectedDifficulty}
+          onStartGame={handleStartGame}
+          onLeaveRoom={handleLeaveRoom}
+        />
       )}
 
       {room.state === 'ROLE_REVEAL' && (
@@ -293,6 +305,8 @@ function App() {
       {room.state === 'QUIZ' && (
         <div className="quiz-view">
           <GameTimer startTime={room.quizStartTime} duration={room.settings.timerDuration} />
+
+          <RoleChip role={myRole} secretWord={room.secretWord} />
 
           {isMaster ? (
             <MasterControls roomCode={room.code} />
@@ -311,7 +325,7 @@ function App() {
         <VotingScreen room={room} myPlayerId={myPlayerId} />
       )}
 
-      {room.state === 'RESULT' && (
+      {(room.state === 'RESULT' || room.state === 'GAME_OVER') && (
         <ResultsScreen room={room} myPlayerId={myPlayerId} />
       )}
     </div>
