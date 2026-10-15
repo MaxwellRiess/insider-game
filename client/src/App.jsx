@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Lobby from './components/Lobby';
 import RoleReveal from './components/RoleReveal';
@@ -39,6 +39,13 @@ function App() {
     setCurtain(next ? { ...next, id: (curtain?.id || 0) + 1 } : null);
   }
   const clearCurtain = useCallback(() => setCurtain(null), []);
+
+  // Every screen starts at the top. Without this a new phase keeps the
+  // previous screen's scroll position, or the offset left by the phone's
+  // keyboard after typing a name.
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [roomState]);
 
   const getResumeErrorMessage = (error) => {
     const silentErrors = new Set([
@@ -279,7 +286,7 @@ function App() {
   const isMaster = myRole === 'MASTER';
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${room.state === 'QUIZ' ? 'fit-screen' : ''}`}>
       <div className="status-bar">
         <div className="status-left">
           <span>ROOM: {room.code}</span>

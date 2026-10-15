@@ -63,18 +63,22 @@ export default function InvitePanel({ roomCode }) {
 
     return (
         <div className="invite-panel">
-            <span className="room-code-label">ROOM CODE</span>
-            <span className="room-code-value" aria-label={`Room code ${roomCode.split('').join(' ')}`}>{roomCode}</span>
-
-            <button
-                type="button"
-                className="invite-qr"
-                onClick={() => setQrExpanded(true)}
-                aria-label="Show a larger QR code to scan"
-            >
-                <QRCodeSVG value={link} size={144} marginSize={2} title={`QR code to join room ${roomCode}`} />
-                <span className="invite-qr-hint">SCAN TO JOIN · TAP TO ENLARGE</span>
-            </button>
+            <div className="invite-main">
+                <button
+                    type="button"
+                    className="invite-qr"
+                    onClick={() => setQrExpanded(true)}
+                    aria-label="Show a larger QR code to scan"
+                >
+                    <QRCodeSVG value={link} size={104} marginSize={2} title={`QR code to join room ${roomCode}`} />
+                    <span className="invite-qr-hint">TAP TO ENLARGE</span>
+                </button>
+                <div className="invite-code">
+                    <span className="room-code-label">ROOM CODE</span>
+                    <span className="room-code-value" aria-label={`Room code ${roomCode.split('').join(' ')}`}>{roomCode}</span>
+                    <span className="invite-code-hint">SCAN THE QR CODE OR SHARE AN INVITE</span>
+                </div>
+            </div>
 
             <div className={`invite-actions${canShare ? '' : ' single'}`}>
                 {canShare && (

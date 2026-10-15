@@ -50,7 +50,7 @@ export default function WaitingRoom({
             {isHost ? (
                 <div className="start-controls">
                     <div className="setting-group">
-                        <label htmlFor="round-difficulty">ROUND DIFFICULTY:</label>
+                        <label htmlFor="round-difficulty">DIFFICULTY</label>
                         <select
                             id="round-difficulty"
                             value={selectedDifficulty}

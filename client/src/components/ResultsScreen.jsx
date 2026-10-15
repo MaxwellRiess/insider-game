@@ -168,8 +168,6 @@ export default function ResultsScreen({ room, myPlayerId }) {
 
     const insiderId = Object.keys(room.roles || {}).find(id => room.roles[id] === 'INSIDER');
     const insiderName = getPlayerName(room, insiderId);
-    const accusedName = getPlayerName(room, room.accusedId)
-        || (room.winReason === 'VOTE TIED' ? 'NOBODY (TIE)' : 'NOBODY');
 
     if (stage.startsWith('count-') || stage === 'beat') {
         return (
@@ -200,20 +198,14 @@ export default function ResultsScreen({ room, myPlayerId }) {
 
             {showDetails && (
                 <section className="result-details" aria-label="Round breakdown">
-                    <div className="result-summary result-detail" style={nextDetail()}>
-                        {room.secretWord && (
+                    {room.secretWord && (
+                        <div className="result-summary result-detail" style={nextDetail()}>
                             <div className="result-summary-row">
                                 <span className="result-summary-label">THE WORD WAS</span>
                                 <span className="result-summary-word">{room.secretWord}</span>
                             </div>
-                        )}
-                        {!isGameOver && (
-                            <div className="result-summary-row">
-                                <span className="result-summary-label">ACCUSED</span>
-                                <span className="result-summary-value">{accusedName}</span>
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
 
                     <div className="roles-reveal-list">
                         {room.players.map(p => {
@@ -231,10 +223,12 @@ export default function ResultsScreen({ room, myPlayerId }) {
                                     style={nextDetail()}
                                 >
                                     <div className="player-info">
-                                        <span className="player-name">
-                                            {p.name}{p.id === myPlayerId && ' (YOU)'}
+                                        <span className="player-name-row">
+                                            <span className="player-name">
+                                                {p.name}{p.id === myPlayerId && ' (YOU)'}
+                                            </span>
+                                            <span className={`player-role ${roleClass}`}>{getRoleLabel(role)}</span>
                                         </span>
-                                        <span className={`player-role ${roleClass}`}>{getRoleLabel(role)}</span>
                                         {!isGameOver && (
                                             <span className="player-voted-for">
                                                 {votedFor ? `VOTED FOR ${votedFor}` : 'DID NOT VOTE'}

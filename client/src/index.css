@@ -66,6 +66,9 @@ body::after {
   justify-content: flex-start;
   position: relative;
   z-index: 1;
+  /* Glows like the results bloom spill past the column on purpose. Clip
+     them at the screen edge so phones don't zoom out or scroll sideways. */
+  overflow-x: clip;
 }
 
 /* ── Layout ─────────────────────────────── */
@@ -80,10 +83,43 @@ body::after {
   gap: 14px;
 }
 
-/* The landing page has a fixed height, so it can sit centred. In-room views
-   grow as players join, so they stay pinned to the top to avoid jumping. */
+/* Every screen is anchored to the top. The landing page gets a little
+   breathing room above the title instead of being centred. */
 .lobby-container {
-  margin-block: auto;
+  margin-top: clamp(16px, 8vh, 72px);
+}
+
+/* In-room screens fill the viewport so a phase can use the space below the
+   status bar (the results reveal centres itself in it). */
+.app-container {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.app-container > .phase {
+  flex: 1;
+}
+
+/* The quiz never scrolls the page: it fits the screen exactly and the
+   question log takes whatever height is left, scrolling inside itself. */
+.app-container.fit-screen {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.fit-screen .phase,
+.fit-screen .quiz-view {
+  min-height: 0;
+}
+
+.fit-screen .quiz-view {
+  flex: 1;
+}
+
+.fit-screen .player-log {
+  flex: 1 1 0;
+  min-height: 110px;
+  max-height: none;
 }
 
 .visually-hidden {
@@ -407,13 +443,12 @@ select.input-field option {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: 8px 0;
 }
 
 .waiting-room h2 {
   font-family: var(--font-header);
-  font-size: 1.4rem;
-  margin: 0 0 4px;
+  font-size: 1.3rem;
+  margin: 0 0 2px;
   font-weight: 700;
   font-style: italic;
   color: var(--color-muted);
@@ -421,19 +456,20 @@ select.input-field option {
 }
 
 .player-list {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
   width: 100%;
-  margin: 18px 0;
+  margin: 12px 0 14px;
 }
 
 .player-card {
-  padding: 13px 16px;
+  min-width: 0;
+  padding: 10px 12px;
   background: var(--color-card);
   font-weight: 700;
-  font-size: 0.85rem;
-  letter-spacing: 1.5px;
+  font-size: 0.82rem;
+  letter-spacing: 0.5px;
   text-align: left;
   border-radius: var(--radius-sm);
   display: flex;
@@ -445,7 +481,6 @@ select.input-field option {
 
 .player-card:hover {
   border-color: var(--color-border-mid);
-  transform: translateX(3px);
 }
 
 .player-card.host {
@@ -454,15 +489,21 @@ select.input-field option {
 }
 
 .setting-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   text-align: left;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   width: 100%;
 }
 
 .setting-group label {
   display: block;
+  flex-shrink: 0;
+  white-space: nowrap;
   font-weight: 700;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   font-size: 0.72rem;
   letter-spacing: 2px;
   color: var(--color-muted);
@@ -836,13 +877,14 @@ select.input-field option {
 }
 
 .candidates-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 7px;
 }
 
 .candidate-card {
-  padding: 15px 18px;
+  min-width: 0;
+  padding: 14px;
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -859,7 +901,6 @@ select.input-field option {
 .candidate-card:hover {
   border-color: var(--color-border-mid);
   background: rgba(255, 255, 255, 0.04);
-  transform: translateX(2px);
 }
 
 .candidate-card.selected {
@@ -935,7 +976,7 @@ select.input-field option {
 }
 
 .result-card {
-  padding: 13px 18px;
+  padding: 10px 14px;
   background: var(--color-card);
   display: flex;
   justify-content: space-between;
@@ -960,6 +1001,24 @@ select.input-field option {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+}
+
+.player-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.player-name-row .player-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-name-row .player-role {
+  flex-shrink: 0;
 }
 
 .player-name {
@@ -987,8 +1046,8 @@ select.input-field option {
 }
 
 .play-again-controls {
-  margin-top: 12px;
-  padding-top: 20px;
+  margin-top: 0;
+  padding-top: 14px;
   border-top: 1px solid var(--color-border);
 }
 
@@ -1020,10 +1079,10 @@ select.input-field option {
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 20px 10px;
-  margin-bottom: 18px;
+  align-items: stretch;
+  gap: 10px;
+  padding: 14px 14px 6px;
+  margin-bottom: 14px;
   background: var(--color-card);
   border: 1px solid var(--color-border-mid);
   border-radius: var(--radius);
@@ -1036,12 +1095,34 @@ select.input-field option {
   color: var(--color-muted);
 }
 
+.invite-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.invite-code {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+
+.invite-code-hint {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
 .room-code-value {
-  font-size: 3.4rem;
+  font-size: 2.6rem;
   font-weight: 900;
-  letter-spacing: 12px;
-  text-indent: 12px;
-  line-height: 1.1;
+  letter-spacing: 6px;
+  line-height: 1;
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
@@ -1049,11 +1130,12 @@ select.input-field option {
 /* QR codes scan most reliably as dark modules on white, so the code
    sits on its own light tile rather than following the dark theme. */
 .invite-qr {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin: 8px 0 4px;
+  gap: 5px;
+  margin: 0;
   padding: 0;
   background: none;
   border: none;
@@ -1095,7 +1177,6 @@ select.input-field option {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-top: 8px;
 }
 
 .invite-actions.single {
@@ -1163,7 +1244,8 @@ select.input-field option {
 
 .share-status {
   min-height: 1.2em;
-  font-size: 0.68rem;
+  text-align: center;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 2px;
   color: var(--color-success);
@@ -1191,16 +1273,24 @@ select.input-field option {
   opacity: 0.5;
 }
 
+.player-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .player-card-tags {
   display: flex;
-  gap: 6px;
+  flex-shrink: 0;
+  gap: 4px;
 }
 
 .player-tag {
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   font-weight: 900;
-  letter-spacing: 2px;
-  padding: 3px 7px;
+  letter-spacing: 1.5px;
+  padding: 2px 5px;
   border-radius: 4px;
   color: var(--color-primary);
   border: 1px solid rgba(255, 51, 51, 0.35);
@@ -1440,7 +1530,7 @@ select.input-field option {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 18px;
+  padding: 8px 14px;
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -1487,10 +1577,14 @@ select.input-field option {
   color: var(--color-muted);
 }
 
+/* The ACCUSED tag sits under the count so the player's name keeps its room. */
 .vote-count {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .accused-tag {
@@ -1603,7 +1697,7 @@ select.input-field option {
 /* While counting down and announcing, the moment fills the screen. */
 .results-screen.stage-countdown,
 .results-screen.stage-hero {
-  min-height: calc(100dvh - 150px);
+  flex: 1;
   justify-content: center;
 }
 
@@ -1658,12 +1752,15 @@ select.input-field option {
   animation: countdownSweep 1s linear both;
 }
 
+/* Same face as the quiz timer. Playfair's italic old-style numerals sit at
+   different heights (the 3 drops below the line, the 1 and 2 don't), so
+   they can't be centred in the ring; Inter's lining figures can. */
 .reveal-countdown-number {
   grid-area: 1 / 1;
-  font-family: var(--font-header);
-  font-style: italic;
-  font-weight: 700;
-  font-size: 6.5rem;
+  font-family: var(--font-main);
+  font-weight: 900;
+  font-size: 6rem;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   color: var(--color-text);
   text-shadow: 0 0 40px rgba(255, 255, 255, 0.18);
@@ -1727,7 +1824,21 @@ select.input-field option {
 }
 
 .results-screen.stage-details .result-title {
-  font-size: 2.5rem;
+  font-size: 2.2rem;
+}
+
+.results-screen.stage-details .result-hero {
+  gap: 8px;
+  padding: 0;
+}
+
+.results-screen.stage-details .result-insider {
+  margin: 0;
+  gap: 2px;
+}
+
+.results-screen.stage-details .result-insider-name {
+  font-size: 1.5rem;
 }
 
 .result-title-word {
@@ -1759,6 +1870,7 @@ select.input-field option {
   font-style: italic;
   font-weight: 700;
   font-size: 2rem;
+  transition: font-size 0.9s cubic-bezier(0.65, 0, 0.35, 1);
   line-height: 1.1;
   color: var(--color-primary);
   text-shadow: 0 0 24px var(--color-primary-glow);
@@ -1891,7 +2003,37 @@ select.input-field option {
     transform: none;
   }
 
-  .results-screen .result-title {
+  .results-screen .result-title,
+  .result-insider-name {
     transition: none;
+  }
+}
+
+/* ── Short screens ───────────────────────── */
+
+/* Phones like the iPhone SE: shrink the largest fixed-size pieces so the
+   quiz still leaves room for the question log. */
+@media (max-height: 720px) {
+  .timer-container {
+    width: 140px;
+    height: 140px;
+  }
+
+  .timer-display {
+    font-size: 2.8rem;
+    letter-spacing: -2px;
+  }
+
+  .role-reveal-cover .secret-reveal-cover {
+    min-height: 220px;
+  }
+
+  .reveal-countdown-dial {
+    width: 160px;
+    height: 160px;
+  }
+
+  .reveal-countdown-number {
+    font-size: 5rem;
   }
 }
