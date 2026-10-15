@@ -277,6 +277,35 @@ select.input-field option {
   border-radius: var(--radius-sm);
 }
 
+/* ── Notice Banner ───────────────────────── */
+
+.notice-banner {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-mid);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.notice-banner-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--color-primary);
+}
+
+.notice-banner-text {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--color-text);
+}
+
 /* ── Status Bar ──────────────────────────── */
 
 .status-bar {

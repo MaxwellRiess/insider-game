@@ -41,8 +41,17 @@ export default function WaitingRoom({
         }
     };
 
+    const notice = typeof room.notice === 'string' ? room.notice.trim() : '';
+
     return (
         <div className="waiting-room">
+            {notice && (
+                <div className="notice-banner" role="status">
+                    <span className="notice-banner-label">ROUND ENDED EARLY</span>
+                    <span className="notice-banner-text">{notice}</span>
+                </div>
+            )}
+
             <div className="room-code-panel">
                 <span className="room-code-label">ROOM CODE</span>
                 <span className="room-code-value" aria-label={`Room code ${room.code.split('').join(' ')}`}>{room.code}</span>
