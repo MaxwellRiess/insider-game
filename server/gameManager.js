@@ -3,6 +3,10 @@ const { generateRoomCode } = require('./utils');
 const words = require('./words');
 
 const DISCONNECT_GRACE_MS = 5 * 60 * 1000;
+// How long a disconnected host keeps the role before it passes to another
+// player, so a page refresh or a brief signal drop does not cost them it.
+// HOST_HANDOVER_GRACE_MS can shorten it for local testing.
+const HOST_HANDOVER_GRACE_MS = Number(process.env.HOST_HANDOVER_GRACE_MS) || 30 * 1000;
 const STALE_ROOM_CHECK_MS = 60 * 1000; // check every minute
 const STALE_ROOM_THRESHOLD_MS = 10 * 60 * 1000; // remove after 10 minutes of full inactivity
 const MIN_VOTING_MS = 60 * 1000;
@@ -22,6 +26,7 @@ class GameManager {
         this.rooms = new Map(); // roomCode -> Room State
         this.socketIndex = new Map(); // socketId -> { roomCode, playerId }
         this.disconnectGraceMs = DISCONNECT_GRACE_MS;
+        this.hostHandoverGraceMs = HOST_HANDOVER_GRACE_MS;
 
         this.staleRoomInterval = setInterval(() => {
             this.cleanupStaleRooms();
@@ -48,6 +53,7 @@ class GameManager {
         if (!room) return;
 
         this.clearRoomTimers(room);
+        this.clearHostHandover(room);
         for (const player of room.players) {
             if (player.disconnectTimeout) clearTimeout(player.disconnectTimeout);
             if (player.socketId) this.socketIndex.delete(player.socketId);
@@ -61,6 +67,23 @@ class GameManager {
         if (room.votingTimeout) clearTimeout(room.votingTimeout);
         room.timerTimeout = null;
         room.votingTimeout = null;
+    }
+
+    clearHostHandover(room) {
+        if (room.hostHandoverTimeout) clearTimeout(room.hostHandoverTimeout);
+        room.hostHandoverTimeout = null;
+    }
+
+    // Gives a disconnected host a grace period to come back before the
+    // role moves to another player.
+    scheduleHostHandover(room) {
+        this.clearHostHandover(room);
+        room.hostHandoverTimeout = setTimeout(() => {
+            room.hostHandoverTimeout = null;
+            if (this.rooms.get(room.code) !== room) return;
+            this.ensureHost(room);
+            this.emitRoomUpdate(room.code);
+        }, this.hostHandoverGraceMs);
     }
 
     createRoom(settings = {}) {
@@ -81,7 +104,8 @@ class GameManager {
             secretWord: null,
             roles: {}, // playerId -> role
             votes: {},
-            notice: null // shown in the lobby, e.g. why the last round ended early
+            notice: null, // shown in the lobby, e.g. why the last round ended early
+            hostHandoverTimeout: null
         };
 
         this.rooms.set(roomCode, newRoom);
@@ -89,7 +113,8 @@ class GameManager {
     }
 
     // Keeps a connected host whenever possible. Falls back to any player
-    // only when nobody is connected.
+    // only when nobody is connected. A disconnected host keeps the role
+    // while their handover grace period is running.
     ensureHost(room) {
         if (room.players.length === 0) {
             room.hostId = null;
@@ -97,7 +122,10 @@ class GameManager {
         }
 
         const host = room.players.find(p => p.id === room.hostId);
-        if (!host || !host.connected) {
+        if (host?.connected) {
+            this.clearHostHandover(room);
+        }
+        if (!host || (!host.connected && !room.hostHandoverTimeout)) {
             const replacement = room.players.find(p => p.connected) || host || room.players[0];
             room.hostId = replacement.id;
         }
@@ -558,6 +586,7 @@ class GameManager {
 
         if (room.hostId === playerId) {
             room.hostId = null;
+            this.clearHostHandover(room);
         }
 
         if (room.players.length === 0) {
@@ -608,7 +637,9 @@ class GameManager {
             this.evictPlayer(room.code, player.id);
         }, this.disconnectGraceMs);
 
-        // Hand host to a connected player straight away.
+        if (room.hostId === player.id) {
+            this.scheduleHostHandover(room);
+        }
         this.ensureHost(room);
 
         // If this was the last player still to vote, close the vote now
