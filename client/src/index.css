@@ -1018,7 +1018,7 @@ select.input-field option {
   letter-spacing: 2px;
 }
 
-.room-code-panel {
+.invite-panel {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -1048,8 +1048,119 @@ select.input-field option {
   font-variant-numeric: tabular-nums;
 }
 
-.share-btn {
-  margin: 8px 0 0;
+/* QR codes scan most reliably as dark modules on white, so the code
+   sits on its own light tile rather than following the dark theme. */
+.invite-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: zoom-in;
+}
+
+.invite-qr svg {
+  display: block;
+  padding: 6px;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  transition: transform var(--transition);
+}
+
+.invite-qr:hover svg,
+.invite-qr:focus-visible svg {
+  transform: scale(1.03);
+}
+
+.invite-qr:focus-visible {
+  outline: none;
+}
+
+.invite-qr:focus-visible svg {
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-primary);
+}
+
+.invite-qr-hint {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--color-muted);
+}
+
+.invite-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.invite-actions.single {
+  grid-template-columns: 1fr;
+}
+
+.invite-actions .btn {
+  margin: 0;
+  padding-inline: 8px;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px 16px;
+  background: rgba(10, 10, 10, 0.92);
+  animation: fadeIn 0.18s ease-out;
+}
+
+.qr-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 360px);
+  padding: 20px 20px 16px;
+  background: #fff;
+  border-radius: var(--radius);
+  color: #131313;
+}
+
+.qr-overlay-code {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.qr-overlay-title {
+  margin: 14px 0 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: rgba(19, 19, 19, 0.55);
+}
+
+.qr-overlay-code-text {
+  margin: 0;
+  font-size: 2.4rem;
+  font-weight: 900;
+  letter-spacing: 10px;
+  text-indent: 10px;
+  line-height: 1.1;
+}
+
+.qr-overlay-close {
+  width: min(100%, 360px);
 }
 
 .share-status {

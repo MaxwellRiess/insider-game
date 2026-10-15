@@ -1,16 +1,6 @@
 import React, { useState } from 'react';
 import { socket } from '../socket';
-
-function getRoomCodeFromUrl() {
-    try {
-        const code = new URLSearchParams(window.location.search).get('room');
-        if (!code) return '';
-        const cleaned = code.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
-        return cleaned.length === 4 ? cleaned : '';
-    } catch {
-        return '';
-    }
-}
+import { getInviteRoomCode } from '../roomHelpers';
 
 function clearRoomCodeFromUrl() {
     const url = new URL(window.location.href);
@@ -20,7 +10,7 @@ function clearRoomCodeFromUrl() {
 }
 
 export default function Lobby({ onJoin, savedSession, resumeError, onClearSavedSession }) {
-    const [linkedRoomCode] = useState(getRoomCodeFromUrl);
+    const [linkedRoomCode] = useState(getInviteRoomCode);
     const [name, setName] = useState(savedSession?.playerName || '');
     const [roomCode, setRoomCode] = useState(linkedRoomCode || savedSession?.roomCode || '');
     const [error, setError] = useState('');
@@ -82,6 +72,7 @@ export default function Lobby({ onJoin, savedSession, resumeError, onClearSavedS
                 maxLength={20}
                 autoComplete="nickname"
                 autoCapitalize="words"
+                autoFocus={Boolean(linkedRoomCode)}
                 className="input-field"
             />
         </>

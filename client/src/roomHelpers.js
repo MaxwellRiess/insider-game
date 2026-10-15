@@ -33,6 +33,18 @@ export function getJoinLink(roomCode) {
     return url.toString();
 }
 
+// Reads the room code from an invite link or QR code (?room=ABCD).
+export function getInviteRoomCode() {
+    try {
+        const code = new URLSearchParams(window.location.search).get('room');
+        if (!code) return '';
+        const cleaned = code.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+        return cleaned.length === 4 ? cleaned : '';
+    } catch {
+        return '';
+    }
+}
+
 export const MIN_PLAYERS = 4;
 
 const ROLE_LABELS = {

@@ -9,7 +9,7 @@ import VotingScreen from './components/VotingScreen';
 import ResultsScreen from './components/ResultsScreen';
 import WaitingRoom from './components/WaitingRoom';
 import RoleChip from './components/RoleChip';
-import { getRole } from './roomHelpers';
+import { getInviteRoomCode, getRole } from './roomHelpers';
 import { clearSession, getSavedSession, saveSession } from './session';
 import './index.css';
 
@@ -24,6 +24,8 @@ function App() {
   const attemptedResumeSocketId = useRef(null);
   const savedSessionRef = useRef(savedSession);
   const hostMenuRef = useRef(null);
+  // An invite link for a different room wins over resuming the last one.
+  const [inviteRoomCode] = useState(getInviteRoomCode);
 
   const getResumeErrorMessage = (error) => {
     const silentErrors = new Set([
@@ -58,6 +60,9 @@ function App() {
     };
 
     saveSession(nextSession);
+    // Update the ref now: the server's first roomUpdate can arrive before the
+    // effect below runs, and would otherwise be checked against the old session.
+    savedSessionRef.current = nextSession;
     setSavedSession(nextSession);
     setResumeError('');
     setRoomActionError('');
@@ -121,6 +126,10 @@ function App() {
       return;
     }
 
+    if (inviteRoomCode && inviteRoomCode !== savedSession.roomCode) {
+      return;
+    }
+
     attemptedResumeSocketId.current = socket.id;
 
     socket.emit(
@@ -136,7 +145,7 @@ function App() {
         handleJoinResponse(response);
       }
     );
-  }, [isConnected, room, savedSession]);
+  }, [isConnected, room, savedSession, inviteRoomCode]);
 
   useEffect(() => {
     if (!hostMenuOpen) {
