@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Lobby from './components/Lobby';
 import RoleReveal from './components/RoleReveal';
@@ -9,7 +9,8 @@ import VotingScreen from './components/VotingScreen';
 import ResultsScreen from './components/ResultsScreen';
 import WaitingRoom from './components/WaitingRoom';
 import RoleChip from './components/RoleChip';
-import { getInviteRoomCode, getRole } from './roomHelpers';
+import PhaseCurtain from './components/PhaseCurtain';
+import { getInviteRoomCode, getPhaseCurtain, getRole } from './roomHelpers';
 import { clearSession, getSavedSession, saveSession } from './session';
 import './index.css';
 
@@ -26,6 +27,18 @@ function App() {
   const hostMenuRef = useRef(null);
   // An invite link for a different room wins over resuming the last one.
   const [inviteRoomCode] = useState(getInviteRoomCode);
+
+  // Show a title card when the room moves to a new phase. Joining or
+  // reconnecting into a phase has no previous phase, so it skips the card.
+  const roomState = room?.state || null;
+  const [shownState, setShownState] = useState(roomState);
+  const [curtain, setCurtain] = useState(null);
+  if (roomState !== shownState) {
+    setShownState(roomState);
+    const next = shownState && roomState ? getPhaseCurtain(shownState, roomState, room) : null;
+    setCurtain(next ? { ...next, id: (curtain?.id || 0) + 1 } : null);
+  }
+  const clearCurtain = useCallback(() => setCurtain(null), []);
 
   const getResumeErrorMessage = (error) => {
     const silentErrors = new Set([
@@ -295,47 +308,53 @@ function App() {
 
       {roomActionError && <div className="error-banner">{roomActionError}</div>}
 
-      {room.state === 'LOBBY' && (
-        <WaitingRoom
-          room={room}
-          myPlayerId={myPlayerId}
-          isHost={isHost}
-          selectedDifficulty={selectedDifficulty}
-          onDifficultyChange={setSelectedDifficulty}
-          onStartGame={handleStartGame}
-          onLeaveRoom={handleLeaveRoom}
-        />
-      )}
+      <div className="phase" key={room.state}>
+        {room.state === 'LOBBY' && (
+          <WaitingRoom
+            room={room}
+            myPlayerId={myPlayerId}
+            isHost={isHost}
+            selectedDifficulty={selectedDifficulty}
+            onDifficultyChange={setSelectedDifficulty}
+            onStartGame={handleStartGame}
+            onLeaveRoom={handleLeaveRoom}
+          />
+        )}
 
-      {room.state === 'ROLE_REVEAL' && (
-        <RoleReveal room={room} myPlayerId={myPlayerId} />
-      )}
+        {room.state === 'ROLE_REVEAL' && (
+          <RoleReveal room={room} myPlayerId={myPlayerId} />
+        )}
 
-      {room.state === 'QUIZ' && (
-        <div className="quiz-view">
-          <GameTimer startTime={room.quizStartTime} duration={room.settings.timerDuration} />
+        {room.state === 'QUIZ' && (
+          <div className="quiz-view">
+            <GameTimer startTime={room.quizStartTime} duration={room.settings.timerDuration} />
 
-          <RoleChip role={myRole} secretWord={room.secretWord} />
+            <RoleChip role={myRole} secretWord={room.secretWord} />
 
-          {isMaster ? (
-            <MasterControls roomCode={room.code} />
-          ) : (
-            <div className="common-view">
-              <p>ASK QUESTIONS!</p>
-              <p>WAIT FOR MASTER RESPONSE</p>
-            </div>
-          )}
+            {isMaster ? (
+              <MasterControls roomCode={room.code} />
+            ) : (
+              <div className="common-view">
+                <p>ASK QUESTIONS!</p>
+                <p>WAIT FOR MASTER RESPONSE</p>
+              </div>
+            )}
 
-          <PlayerLog log={room.questionLog || []} />
-        </div>
-      )}
+            <PlayerLog log={room.questionLog || []} />
+          </div>
+        )}
 
-      {room.state === 'VOTING' && (
-        <VotingScreen room={room} myPlayerId={myPlayerId} />
-      )}
+        {room.state === 'VOTING' && (
+          <VotingScreen room={room} myPlayerId={myPlayerId} />
+        )}
 
-      {(room.state === 'RESULT' || room.state === 'GAME_OVER') && (
-        <ResultsScreen room={room} myPlayerId={myPlayerId} />
+        {(room.state === 'RESULT' || room.state === 'GAME_OVER') && (
+          <ResultsScreen room={room} myPlayerId={myPlayerId} />
+        )}
+      </div>
+
+      {curtain && (
+        <PhaseCurtain key={curtain.id} title={curtain.title} subtitle={curtain.subtitle} onDone={clearCurtain} />
       )}
     </div>
   );
